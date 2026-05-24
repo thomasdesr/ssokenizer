@@ -296,6 +296,31 @@ func TestRefreshTransportError(t *testing.T) {
 	assert.Equal(t, "", readBody(t, resp))
 }
 
+// TestRefreshGenericOAuthAuthStyleParams confirms AuthStyleInParams is wired
+// end-to-end: client_id/client_secret arrive in the form body, not HTTP Basic.
+// Without the form-body assertion this would still pass under buggy wiring,
+// because the mock accepts either auth path.
+func TestRefreshGenericOAuthAuthStyleParams(t *testing.T) {
+	resp, idpRec := doRefresh(t, markerDeadToken, oauth2.AuthStyleInParams)
+
+	assertRefreshErrorHeaders(t, resp, "application/json")
+	assert.Equal(t, `{"error":"invalid_grant","error_description":"Token revoked","error_uri":"https://provider/errors/invalid_grant"}`, readBody(t, resp))
+
+	var tokenReq *http.Request
+	for _, req := range idpRec.all() {
+		if req.URL.Path == "/token" {
+			tokenReq = req
+			break
+		}
+	}
+	if tokenReq == nil {
+		t.Fatal("expected idp /token request")
+	}
+	assert.Equal(t, "", tokenReq.Header.Get("Authorization"), "AuthStyleInParams must not send Authorization header")
+	assert.Equal(t, testClientID, tokenReq.Form.Get("client_id"))
+	assert.Equal(t, testClientSecret, tokenReq.Form.Get("client_secret"))
+}
+
 const (
 	testClientID     = "my-client-id"
 	testClientSecret = "my-client-secret"
@@ -474,7 +499,12 @@ var idp = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if username != testClientID || password != testClientSecret {
+		clientID, clientSecret := username, password
+		if clientID == "" {
+			clientID, clientSecret = r.Form.Get("client_id"), r.Form.Get("client_secret")
+		}
+
+		if clientID != testClientID || clientSecret != testClientSecret {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}

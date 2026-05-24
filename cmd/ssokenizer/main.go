@@ -222,6 +222,13 @@ type IdentityProviderConfig struct {
 	// oauth token endpoint URL. Only needed for "oauth" profile
 	TokenURL string `yaml:"token_url"`
 
+	// oauth authentication style for token endpoint. Only for "oauth" profile.
+	// Omitted (default) leaves x/oauth2 in AuthStyleAutoDetect, which probes
+	// both styles on the first refresh and can mask §5.2 errors behind a
+	// silent retry. Set explicitly to "header" (HTTP Basic) or "params"
+	// (client_id/client_secret in the form body) to skip the probe.
+	AuthStyle string `yaml:"auth_style"`
+
 	// Apple MusicKit developer token. Only needed for "musickit" profile
 	MusicKitDeveloperToken string `yaml:"developer_token"`
 
@@ -321,9 +328,22 @@ func (ic *IdentityProviderConfig) oauthProvider(pc ssokenizer.ProviderConfig, c 
 			return nil, errors.New("missing token_url")
 		}
 
+		var authStyle xoauth2.AuthStyle
+		switch ic.AuthStyle {
+		case "":
+			// zero value = xoauth2.AuthStyleAutoDetect
+		case "header":
+			authStyle = xoauth2.AuthStyleInHeader
+		case "params":
+			authStyle = xoauth2.AuthStyleInParams
+		default:
+			return nil, fmt.Errorf("invalid auth_style %q; valid values are 'header' or 'params'", ic.AuthStyle)
+		}
+
 		op.OAuthConfig.Endpoint = xoauth2.Endpoint{
-			AuthURL:  ic.AuthURL,
-			TokenURL: ic.TokenURL,
+			AuthURL:   ic.AuthURL,
+			TokenURL:  ic.TokenURL,
+			AuthStyle: authStyle,
 		}
 
 		return &op, nil

@@ -48,6 +48,7 @@ identity_providers:
     #
     # auth_url: $PROVIDER_AUTH_URL
     # token_url: $PROVIDER_TOKEN_URL
+    # auth_style: params  # set to "params" if your IdP rejects HTTP Basic on the token endpoint
 
   github:
     secret_auth:
