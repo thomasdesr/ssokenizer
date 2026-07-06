@@ -34,6 +34,7 @@ const (
 	markerBadClient     = "bad-client-token"
 	markerUpstream5xx   = "upstream-5xx-token"
 	markerTransportFail = "transport-fail-token"
+	markerNoExpiry      = "no-expiry-token"
 )
 
 // doRefresh runs a /refresh request through the tokenizer pipeline against
@@ -296,6 +297,19 @@ func TestRefreshTransportError(t *testing.T) {
 	assert.Equal(t, "", readBody(t, resp))
 }
 
+// TestRefreshNoUsableExpiry pins the success-path contract when the
+// provider's token response carries no expires_in: the sealed token is
+// still returned, and Cache-Control is omitted rather than emitted with a
+// zero or negative max-age. The header's absence is the signal that no
+// expiry is known.
+func TestRefreshNoUsableExpiry(t *testing.T) {
+	resp, _ := doRefresh(t, markerNoExpiry, oauth2.AuthStyleInHeader)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "", resp.Header.Get("Cache-Control"))
+	assert.NotEqual(t, "", readBody(t, resp))
+}
+
 // TestRefreshGenericOAuthAuthStyleParams confirms AuthStyleInParams is wired
 // end-to-end: client_id/client_secret arrive in the form body, not HTTP Basic.
 // Without the form-body assertion this would still pass under buggy wiring,
@@ -533,6 +547,12 @@ var idp = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				panic("hijack: " + err.Error())
 			}
 			_ = conn.Close()
+			return
+		case markerNoExpiry:
+			// Successful exchange whose response omits expires_in, as
+			// providers with non-expiring access tokens send.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token": "999", "token_type": "Bearer", "refresh_token": "888"}`))
 			return
 		}
 

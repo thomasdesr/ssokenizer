@@ -249,7 +249,17 @@ func (p *Provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", time.Until(tok.Expiry)/time.Second))
+
+	// A zero or past Expiry means the provider supplied no usable expires_in;
+	// formatting it would emit a zero or negative max-age. Omitting the
+	// header is the signal that no expiry is known.
+	if secs := time.Until(tok.Expiry) / time.Second; secs > 0 {
+		w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d", secs))
+	} else {
+		getLog(r).
+			WithField("expiry", tok.Expiry).
+			Warn("refresh: token response missing usable expiry; omitting Cache-Control")
+	}
 
 	if _, err := w.Write([]byte(sealed)); err != nil {
 		// status already written
